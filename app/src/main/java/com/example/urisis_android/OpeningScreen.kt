@@ -18,7 +18,7 @@ import kotlinx.coroutines.delay
 fun SplashScreen(onFinished: () -> Unit) {
 
     LaunchedEffect(Unit) {
-        delay(2000)
+        delay(3000)
         onFinished()
     }
 
