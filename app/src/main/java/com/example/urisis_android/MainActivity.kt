@@ -3,23 +3,63 @@ package com.example.urisis_android
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            var showDisclaimer by remember { mutableStateOf(false) }
 
-            if (!showDisclaimer) {
-                SplashScreen(onFinished = { showDisclaimer = true })
-            } else {
-                MedicalDisclaimerScreen(onAgree = {
-                    // Navigate to your next screen here
-                })
+            var screen by remember { mutableStateOf("splash") }
+
+            when (screen) {
+
+                // ───────────────────────── Splash Screen
+                "splash" -> {
+                    SplashScreen(
+                        onFinished = {
+                            screen = "disclaimer"
+                        }
+                    )
+                }
+
+                // ───────────────────────── Disclaimer Screen
+                "disclaimer" -> {
+                    MedicalDisclaimerScreen(
+                        onAgree = {
+                            screen = "login"
+                        }
+                    )
+                }
+
+                // ───────────────────────── Login Screen (NEW)
+                "login" -> {
+                    LoginScreen(
+                        onLoginClick = {
+                            // TODO: go to home/dashboard screen later
+                            // screen = "home"
+                        },
+                        onRegisterClick = {
+                            screen = "register"
+                        }
+                    )
+                }
+
+                // ───────────────────────── Register Screen (NEW)
+                "register" -> {
+                    RegisterScreen(
+                        onBackClick = {
+                            screen = "login"
+                        },
+                        onCreateAccountClick = {
+                            // after register, go back to login
+                            screen = "login"
+                        },
+                        onLoginClick = {
+                            screen = "login"
+                        }
+                    )
+                }
             }
         }
     }
