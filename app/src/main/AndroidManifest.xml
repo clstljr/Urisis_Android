@@ -2,6 +2,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ADDED — Grants the app permission to access the internet
+         Required for future BLE communication, any API calls,
+         or network requests the app may make.
+         Without this the app will crash on any network operation. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- ADDED — Required for Bluetooth Low Energy (BLE) communication
+         with the Arduino IoT hardware sensor device.
+         BLUETOOTH_SCAN — scan for nearby BLE devices
+         BLUETOOTH_CONNECT — connect to the Arduino sensor -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -18,7 +33,6 @@
             android:theme="@style/Theme.Urisis_Android">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
