@@ -7,6 +7,13 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+
+# ↓ ADDED - these 3 files were causing merge conflicts with your team
+/.idea/gradle.xml
+/.idea/misc.xml
+/.idea/deploymentTargetSelector.xml
+# ↑ ADDED
+
 .DS_Store
 /build
 /captures
