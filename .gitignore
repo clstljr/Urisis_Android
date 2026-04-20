@@ -8,11 +8,14 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 
-# ↓ ADDED - these 3 files were causing merge conflicts with your team
+# ADDED — These 3 files were causing merge conflicts when teammates pulled
+# They are Android Studio IDE configuration files that each developer's
+# machine generates differently based on their local setup (emulators,
+# devices, SDK paths). They should never be committed to the shared repo
+# because they are personal to each developer's machine.
 /.idea/gradle.xml
 /.idea/misc.xml
 /.idea/deploymentTargetSelector.xml
-# ↑ ADDED
 
 .DS_Store
 /build
