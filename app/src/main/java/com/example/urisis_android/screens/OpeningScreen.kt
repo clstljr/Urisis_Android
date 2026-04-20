@@ -1,4 +1,4 @@
-package com.example.urisis_android
+package com.example.urisis_android.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*

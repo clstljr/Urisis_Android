@@ -1,4 +1,4 @@
-package com.example.urisis_android
+package com.example.urisis_android.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

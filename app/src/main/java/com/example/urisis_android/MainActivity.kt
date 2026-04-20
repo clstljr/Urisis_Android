@@ -4,6 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import com.example.urisis_android.screens.LoginScreen
+import com.example.urisis_android.screens.MedicalDisclaimerScreen
+import com.example.urisis_android.screens.RegisterScreen
+import com.example.urisis_android.screens.SplashScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,7 +56,7 @@ class MainActivity : ComponentActivity() {
                             screen = "login"
                         },
                         onCreateAccountClick = {
-                            // after register, go back to login
+                            // after register, go back to log in
                             screen = "login"
                         },
                         onLoginClick = {
