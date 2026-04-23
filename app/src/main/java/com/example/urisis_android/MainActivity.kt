@@ -6,11 +6,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.urisis_android.auth.AuthViewModel
 import com.example.urisis_android.bluetooth.BleViewModel
 import com.example.urisis_android.screens.AnalyzingSampleScreen
 import com.example.urisis_android.screens.ConnectDeviceScreen
@@ -27,82 +29,85 @@ import com.example.urisis_android.urinalysis.UrinalysisViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
-    // Requests BLE permissions on launch — result is handled reactively
-    // by BleManager.hasPermissions() before every scan/connect call
     private val blePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* no-op: BleManager checks permissions before each operation */ }
+    ) { /* no-op */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         requestBlePermissions()
 
         setContent {
-
-            // Shared across dashboard, connect, and urinalysis flow
             val bleViewModel: BleViewModel = viewModel()
+            val authViewModel: AuthViewModel = viewModel()
             val urinalysisViewModel: UrinalysisViewModel = viewModel(
                 factory = UrinalysisViewModelFactory(bleViewModel)
             )
 
+            val authState by authViewModel.ui.collectAsState()
+            val currentUser = authState.currentUser
+
             var screen by remember { mutableStateOf("splash") }
-            val loggedInUser by remember { mutableStateOf("KeMeNoToRiKo") }
 
             when (screen) {
 
-                // ───────────────────── Splash
                 "splash" -> SplashScreen(
-                    onFinished = { screen = "disclaimer" }
+                    onFinished = {
+                        // If a session was restored while splash was up, skip login
+                        screen = if (currentUser != null) "dashboard" else "disclaimer"
+                    }
                 )
 
-                // ───────────────────── Disclaimer
                 "disclaimer" -> MedicalDisclaimerScreen(
                     onAgree = { screen = "login" }
                 )
 
-                // ───────────────────── Login
                 "login" -> LoginScreen(
-                    onLoginClick    = { screen = "dashboard" },
+                    authViewModel = authViewModel,
+                    onLoginSuccess = { screen = "dashboard" },
                     onRegisterClick = { screen = "register" }
                 )
 
-                // ───────────────────── Register
                 "register" -> RegisterScreen(
-                    onBackClick          = { screen = "login" },
-                    onCreateAccountClick = { screen = "login" },
-                    onLoginClick         = { screen = "login" }
+                    authViewModel = authViewModel,
+                    onBackClick = { screen = "login" },
+                    onRegisterSuccess = { screen = "dashboard" },
+                    onLoginClick = { screen = "login" }
                 )
 
-                // ───────────────────── Dashboard
-                "dashboard" -> MainDashboardScreen(
-                    userName               = loggedInUser,
-                    bleViewModel           = bleViewModel,
-                    onConnectClick         = { screen = "connect" },
-                    onStartUrinalysisClick = {
-                        urinalysisViewModel.reset()
-                        screen = "protocol"
-                    },
-                    onHistoryClick = { /* TODO */ },
-                    onProfileClick = { /* TODO */ },
-                    onLogoutClick  = {
-                        bleViewModel.disconnect()
+                "dashboard" -> {
+                    // Defensive: if session was cleared somewhere, bounce to loginPage
+                    if (currentUser == null) {
                         screen = "login"
+                    } else {
+                        MainDashboardScreen(
+                            userName = currentUser.fullName,
+                            bleViewModel = bleViewModel,
+                            onConnectClick = { screen = "connect" },
+                            onStartUrinalysisClick = {
+                                urinalysisViewModel.reset()
+                                screen = "protocol"
+                            },
+                            onHistoryClick = { /* TODO */ },
+                            onProfileClick = { /* TODO */ },
+                            onLogoutClick = {
+                                bleViewModel.disconnect()
+                                authViewModel.logout()
+                                screen = "login"
+                            }
+                        )
                     }
-                )
+                }
 
-                // ───────────────────── Connect Device
                 "connect" -> ConnectDeviceScreen(
-                    bleViewModel      = bleViewModel,
-                    onBackClick       = { screen = "dashboard" },
+                    bleViewModel = bleViewModel,
+                    onBackClick = { screen = "dashboard" },
                     onDeviceConnected = { screen = "dashboard" }
                 )
 
-                // ───────────────────── Urinalysis flow ────────────────────
                 "protocol" -> PreTestProtocolScreen(
                     onBackClick = { screen = "dashboard" },
                     onContinueClick = {
-                        // set demo = false once Arduino firmware is wired
                         urinalysisViewModel.beginSession(demo = true)
                         screen = "waiting"
                     }
@@ -111,14 +116,14 @@ class MainActivity : ComponentActivity() {
                 "waiting" -> WaitingForDeviceScreen(
                     viewModel = urinalysisViewModel,
                     onAdvance = { screen = "analyzing" },
-                    onBack    = {
+                    onBack = {
                         urinalysisViewModel.reset()
                         screen = "dashboard"
                     }
                 )
 
                 "analyzing" -> AnalyzingSampleScreen(
-                    viewModel  = urinalysisViewModel,
+                    viewModel = urinalysisViewModel,
                     onComplete = { screen = "results" }
                 )
 
@@ -132,23 +137,19 @@ class MainActivity : ComponentActivity() {
                         urinalysisViewModel.reset()
                         screen = "dashboard"
                     },
-                    onViewHistoryClick = { /* TODO: screen = "history" */ }
+                    onViewHistoryClick = { /* TODO */ }
                 )
             }
         }
     }
 
-    // ── Request correct permissions per Android version ────────────────────
-
     private fun requestBlePermissions() {
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ (API 31+) — granular BLE permissions
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT
             )
         } else {
-            // Android 11 and below — classic BT + location for scan discovery
             arrayOf(
                 Manifest.permission.BLUETOOTH,
                 Manifest.permission.BLUETOOTH_ADMIN,

@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -46,11 +49,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.urisis_android.bluetooth.BleConnectionState
 import com.example.urisis_android.bluetooth.BleViewModel
+import com.example.urisis_android.util.Greeting
 
 @Composable
 fun MainDashboardScreen(
-    userName: String = "KeMeNoToRiKo",
-    bleViewModel: BleViewModel,                          // ← lowercase b
+    userName: String,
+    bleViewModel: BleViewModel,
     onConnectClick: () -> Unit = {},
     onStartUrinalysisClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
@@ -63,11 +67,11 @@ fun MainDashboardScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // ── Blue header background ─────────────────────────────────────────
+        // ── Blue gradient header background — extends behind status bar ───
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(210.dp)
+                .height(250.dp)
                 .background(
                     Brush.linearGradient(
                         colors = listOf(Color(0xFF1565C0), Color(0xFF29B6F6))
@@ -81,28 +85,29 @@ fun MainDashboardScreen(
                 .verticalScroll(rememberScrollState())
         ) {
 
-            // ── Header row ────────────────────────────────────────────────
+            // ── Header row — uses real status bar inset ───────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(WindowInsets.statusBars.asPaddingValues())
                     .padding(horizontal = 20.dp)
-                    .padding(top = 52.dp, bottom = 28.dp),
+                    .padding(top = 24.dp, bottom = 32.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Column {
                     Text(
-                        text = "GOOD MORNING",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 12.sp,
+                        text = Greeting.forNow(),
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         letterSpacing = 1.5.sp
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = userName,
                         color = Color.White,
-                        fontSize = 26.sp,
+                        fontSize = 32.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -120,7 +125,7 @@ fun MainDashboardScreen(
                     Box(
                         modifier = Modifier
                             .size(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.2f))
                             .clickable { onLogoutClick() },
                         contentAlignment = Alignment.Center
@@ -141,7 +146,7 @@ fun MainDashboardScreen(
                 // ── BLE banner ────────────────────────────────────────────
                 if (!isConnected) {
 
-                    // Disconnected card — taps open ConnectDeviceScreen
+                    // Disconnected card — tap to open ConnectDeviceScreen
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -151,7 +156,9 @@ fun MainDashboardScreen(
                         elevation = CardDefaults.cardElevation(2.dp)
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -222,7 +229,7 @@ fun MainDashboardScreen(
 
                 } else {
 
-                    // Connected — green banner
+                    // Connected — green banner with device name
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -360,10 +367,17 @@ fun MainDashboardScreen(
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Start Urinalysis", color = Color.White,
-                                fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Text("Begin a new hydration test",
-                                color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+                            Text(
+                                "Start Urinalysis",
+                                color = Color.White,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Begin a new hydration test",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 13.sp
+                            )
                         }
                         Text("→", fontSize = 22.sp, color = Color.White)
                     }
@@ -395,9 +409,17 @@ fun MainDashboardScreen(
                         Spacer(modifier = Modifier.width(14.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("History", fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp, color = Color(0xFF212121))
-                            Text("Past results", fontSize = 12.sp, color = Color(0xFF9E9E9E))
+                            Text(
+                                "History",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color(0xFF212121)
+                            )
+                            Text(
+                                "Past results",
+                                fontSize = 12.sp,
+                                color = Color(0xFF9E9E9E)
+                            )
                         }
                         Text("›", fontSize = 22.sp, color = Color(0xFF9E9E9E))
                     }
@@ -449,7 +471,11 @@ private fun MetricCard(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
@@ -459,8 +485,17 @@ private fun MetricCard(
             ) { Text(emoji, fontSize = 18.sp) }
 
             Spacer(modifier = Modifier.height(10.dp))
-            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF212121))
-            Text(label, fontSize = 11.sp, color = Color(0xFF9E9E9E))
+            Text(
+                value,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF212121)
+            )
+            Text(
+                label,
+                fontSize = 11.sp,
+                color = Color(0xFF9E9E9E)
+            )
         }
     }
 }
