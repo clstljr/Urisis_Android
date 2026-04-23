@@ -12,17 +12,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.urisis_android.bluetooth.BleViewModel
+import com.example.urisis_android.screens.AnalyzingSampleScreen
 import com.example.urisis_android.screens.ConnectDeviceScreen
 import com.example.urisis_android.screens.LoginScreen
 import com.example.urisis_android.screens.MainDashboardScreen
 import com.example.urisis_android.screens.MedicalDisclaimerScreen
+import com.example.urisis_android.screens.PreTestProtocolScreen
 import com.example.urisis_android.screens.RegisterScreen
 import com.example.urisis_android.screens.SplashScreen
+import com.example.urisis_android.screens.TestResultsScreen
+import com.example.urisis_android.screens.WaitingForDeviceScreen
+import com.example.urisis_android.urinalysis.UrinalysisViewModel
+import com.example.urisis_android.urinalysis.UrinalysisViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
     // Requests BLE permissions on launch — result is handled reactively
-    // by BleManager.hasRequiredPermissions() before every scan/connect call
+    // by BleManager.hasPermissions() before every scan/connect call
     private val blePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { /* no-op: BleManager checks permissions before each operation */ }
@@ -34,12 +40,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
 
-            // Single BleViewModel — shared by dashboard and connect screen
-            // so connection state is visible on the dashboard immediately
+            // Shared across dashboard, connect, and urinalysis flow
             val bleViewModel: BleViewModel = viewModel()
+            val urinalysisViewModel: UrinalysisViewModel = viewModel(
+                factory = UrinalysisViewModelFactory(bleViewModel)
+            )
 
             var screen by remember { mutableStateOf("splash") }
-            var loggedInUser by remember { mutableStateOf("KeMeNoToRiKo") }
+            val loggedInUser by remember { mutableStateOf("KeMeNoToRiKo") }
 
             when (screen) {
 
@@ -68,13 +76,16 @@ class MainActivity : ComponentActivity() {
 
                 // ───────────────────── Dashboard
                 "dashboard" -> MainDashboardScreen(
-                    userName          = loggedInUser,
-                    bleViewModel      = bleViewModel,
-                    onConnectClick    = { screen = "connect" },
-                    onStartUrinalysisClick = { /* TODO */ },
-                    onHistoryClick    = { /* TODO */ },
-                    onProfileClick    = { /* TODO */ },
-                    onLogoutClick     = {
+                    userName               = loggedInUser,
+                    bleViewModel           = bleViewModel,
+                    onConnectClick         = { screen = "connect" },
+                    onStartUrinalysisClick = {
+                        urinalysisViewModel.reset()
+                        screen = "protocol"
+                    },
+                    onHistoryClick = { /* TODO */ },
+                    onProfileClick = { /* TODO */ },
+                    onLogoutClick  = {
                         bleViewModel.disconnect()
                         screen = "login"
                     }
@@ -82,11 +93,47 @@ class MainActivity : ComponentActivity() {
 
                 // ───────────────────── Connect Device
                 "connect" -> ConnectDeviceScreen(
-                    bleViewModel = bleViewModel,
-                    onBackClick = { screen = "dashboard" },
+                    bleViewModel      = bleViewModel,
+                    onBackClick       = { screen = "dashboard" },
                     onDeviceConnected = { screen = "dashboard" }
                 )
 
+                // ───────────────────── Urinalysis flow ────────────────────
+                "protocol" -> PreTestProtocolScreen(
+                    onBackClick = { screen = "dashboard" },
+                    onContinueClick = {
+                        // set demo = false once Arduino firmware is wired
+                        urinalysisViewModel.beginSession(demo = true)
+                        screen = "waiting"
+                    }
+                )
+
+                "waiting" -> WaitingForDeviceScreen(
+                    viewModel = urinalysisViewModel,
+                    onAdvance = { screen = "analyzing" },
+                    onBack    = {
+                        urinalysisViewModel.reset()
+                        screen = "dashboard"
+                    }
+                )
+
+                "analyzing" -> AnalyzingSampleScreen(
+                    viewModel  = urinalysisViewModel,
+                    onComplete = { screen = "results" }
+                )
+
+                "results" -> TestResultsScreen(
+                    viewModel = urinalysisViewModel,
+                    onBackClick = {
+                        urinalysisViewModel.reset()
+                        screen = "dashboard"
+                    },
+                    onHomeClick = {
+                        urinalysisViewModel.reset()
+                        screen = "dashboard"
+                    },
+                    onViewHistoryClick = { /* TODO: screen = "history" */ }
+                )
             }
         }
     }
@@ -95,7 +142,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestBlePermissions() {
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ (API 31+) — new granular BLE permissions
+            // Android 12+ (API 31+) — granular BLE permissions
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT

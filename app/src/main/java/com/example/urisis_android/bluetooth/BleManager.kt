@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
@@ -21,7 +22,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -47,13 +50,20 @@ class BleManager(private val context: Context) {
     // Drop any device not seen in this window while scanning
     private val staleThresholdMs = 10_000L
 
+    // Raw text notifications coming in from the Arduino characteristic
+    private val _incoming = MutableSharedFlow<String>(
+        replay = 0, extraBufferCapacity = 32
+    )
+    val incoming: SharedFlow<String> = _incoming
+
     // ─ Scan callback — fires every time a BLE advertisement is received ────
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device
             val entry = BleDevice(
                 address = device.address,
-                name = result.scanRecord?.deviceName ?: runCatching { device.name }.getOrNull(),
+                name = result.scanRecord?.deviceName
+                    ?: runCatching { device.name }.getOrNull(),
                 rssi = result.rssi
             )
             _state.update { current ->
@@ -87,7 +97,8 @@ class BleManager(private val context: Context) {
             listOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
         return required.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, it) ==
+                    PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -167,7 +178,9 @@ class BleManager(private val context: Context) {
         gatt?.disconnect()
     }
 
+    // ─ GATT callback — connection + incoming notifications ────────────────
     private val gattCallback = object : BluetoothGattCallback() {
+
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
@@ -185,6 +198,15 @@ class BleManager(private val context: Context) {
                     }
                 }
             }
+        }
+
+        override fun onCharacteristicChanged(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            val bytes = characteristic.value ?: return
+            val text = runCatching { String(bytes) }.getOrNull() ?: return
+            scope.launch { _incoming.emit(text.trim()) }
         }
     }
 
