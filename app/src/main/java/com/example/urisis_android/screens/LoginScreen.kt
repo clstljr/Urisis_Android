@@ -18,15 +18,29 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.urisis_android.auth.AuthResult
+import com.example.urisis_android.auth.AuthViewModel
 
 @Composable
 fun LoginScreen(
-    onLoginClick: () -> Unit,
+    authViewModel: AuthViewModel,
+    onLoginSuccess: () -> Unit,
     onRegisterClick: () -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+
+    val state by authViewModel.ui.collectAsState()
+    val status = state.status
+
+    // React to auth result
+    LaunchedEffect(status) {
+        if (status is AuthResult.Success) {
+            authViewModel.consumeResult()
+            onLoginSuccess()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -34,7 +48,7 @@ fun LoginScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        brush = Brush.verticalGradient(
+                        Brush.verticalGradient(
                             colors = listOf(Color(0xFF1565C0), Color(0xFF00ACC1))
                         )
                     )
@@ -42,30 +56,21 @@ fun LoginScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Smart Urinalysis",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("Smart Urinalysis",
+                        color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Hydration Monitoring System",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 13.sp
-                    )
+                    Text("Hydration Monitoring System",
+                        color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
                 }
             }
         },
         bottomBar = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Demo: Use any email/password to register, then login\nwith those credentials",
+                    "Your data stays on this device. No account information is sent online.",
                     color = Color(0xFF9E9E9E),
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center
@@ -81,137 +86,103 @@ fun LoginScreen(
                 .padding(padding)
                 .padding(horizontal = 24.dp)
         ) {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(Modifier.height(32.dp))
 
-            Text(
-                text = "Login to Continue",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF212121)
-            )
+            Text("Login to Continue",
+                fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF212121))
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(Modifier.height(28.dp))
 
-            // ── Email ──────────────────────────────────────────────────────────
-            Text(
-                text = "Email",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF212121)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+            FieldLabel("Email")
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Enter your email", color = Color(0xFF9E9E9E)) },
-                leadingIcon = {
-                    Text(
-                        text = "✉",
-                        fontSize = 18.sp,
-                        color = Color(0xFF9E9E9E),
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                },
+                leadingIcon = { Text("✉", fontSize = 18.sp,
+                    color = Color(0xFF9E9E9E),
+                    modifier = Modifier.padding(start = 4.dp)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = Color(0xFFF0F4F8),
-                    focusedContainerColor = Color(0xFFF0F4F8),
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = Color(0xFF1565C0)
-                ),
-                singleLine = true
+                colors = filledFieldColors(),
+                singleLine = true,
+                enabled = status !is AuthResult.Loading
             )
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(Modifier.height(18.dp))
 
-            // ── Password ───────────────────────────────────────────────────────
-            Text(
-                text = "Password",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF212121)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+            FieldLabel("Password")
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Enter your password", color = Color(0xFF9E9E9E)) },
-                leadingIcon = {
-                    Text(
-                        text = "🔒",
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                },
+                leadingIcon = { Text("🔒", fontSize = 16.sp,
+                    modifier = Modifier.padding(start = 4.dp)) },
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Text(
-                            text = if (passwordVisible) "🙈" else "👁",
-                            fontSize = 16.sp
-                        )
+                        Text(if (passwordVisible) "🙈" else "👁", fontSize = 16.sp)
                     }
                 },
-                visualTransformation = if (passwordVisible)
-                    VisualTransformation.None
-                else
-                    PasswordVisualTransformation(),
+                visualTransformation = if (passwordVisible) VisualTransformation.None
+                else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = Color(0xFFF0F4F8),
-                    focusedContainerColor = Color(0xFFF0F4F8),
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = Color(0xFF1565C0)
-                ),
-                singleLine = true
+                colors = filledFieldColors(),
+                singleLine = true,
+                enabled = status !is AuthResult.Loading
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // ── Login Button ───────────────────────────────────────────────────
-            Button(
-                onClick = onLoginClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1565C0)
-                )
-            ) {
-                Text(
-                    text = "Login",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            if (status is AuthResult.Error) {
+                Spacer(Modifier.height(10.dp))
+                Text(status.message, color = Color(0xFFC62828), fontSize = 13.sp)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // ── Register Button ────────────────────────────────────────────────
+            Button(
+                onClick = { authViewModel.login(email, password) },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                enabled = status !is AuthResult.Loading
+            ) {
+                if (status is AuthResult.Loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp, color = Color.White
+                    )
+                } else {
+                    Text("Login", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             OutlinedButton(
                 onClick = onRegisterClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(
-                    width = 1.5.dp,
-                    color = Color(0xFF1565C0)
-                ),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color(0xFF1565C0)
-                )
+                border = BorderStroke(1.5.dp, Color(0xFF1565C0)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1565C0)),
+                enabled = status !is AuthResult.Loading
             ) {
-                Text(
-                    text = "Register",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("Register", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
+
+@Composable
+private fun FieldLabel(text: String) {
+    Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF212121))
+    Spacer(Modifier.height(6.dp))
+}
+
+@Composable
+private fun filledFieldColors() = OutlinedTextFieldDefaults.colors(
+    unfocusedContainerColor = Color(0xFFF0F4F8),
+    focusedContainerColor = Color(0xFFF0F4F8),
+    unfocusedBorderColor = Color.Transparent,
+    focusedBorderColor = Color(0xFF1565C0)
+)

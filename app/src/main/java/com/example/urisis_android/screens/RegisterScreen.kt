@@ -22,11 +22,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.urisis_android.auth.AuthResult
+import com.example.urisis_android.auth.AuthViewModel
 
 @Composable
 fun RegisterScreen(
+    authViewModel: AuthViewModel,
     onBackClick: () -> Unit,
-    onCreateAccountClick: () -> Unit,
+    onRegisterSuccess: () -> Unit,
     onLoginClick: () -> Unit
 ) {
     var fullName by remember { mutableStateOf("") }
@@ -36,44 +39,44 @@ fun RegisterScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
 
+    val state by authViewModel.ui.collectAsState()
+    val status = state.status
+    val isBusy = status is AuthResult.Loading
+
+    LaunchedEffect(status) {
+        if (status is AuthResult.Success) {
+            authViewModel.consumeResult()
+            onRegisterSuccess()
+        }
+    }
+
     Scaffold(
         topBar = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        brush = Brush.verticalGradient(
+                        Brush.verticalGradient(
                             colors = listOf(Color(0xFF1565C0), Color(0xFF00ACC1))
                         )
                     )
                     .padding(top = 12.dp, bottom = 24.dp, start = 4.dp, end = 16.dp)
             ) {
-                // Back button
                 IconButton(
                     onClick = onBackClick,
                     modifier = Modifier.align(Alignment.TopStart)
-                ) {
-                    Text(text = "←", fontSize = 22.sp, color = Color.White)
-                }
+                ) { Text("←", fontSize = 22.sp, color = Color.White) }
 
-                // Title block
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(start = 16.dp, top = 48.dp)
                 ) {
-                    Text(
-                        text = "Create Account",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Join the Smart Urinalysis system",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 13.sp
-                    )
+                    Text("Create Account", color = Color.White,
+                        fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(2.dp))
+                    Text("Join the Smart Urinalysis system",
+                        color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
                 }
             }
         },
@@ -87,187 +90,87 @@ fun RegisterScreen(
                 .padding(horizontal = 24.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(Modifier.height(28.dp))
 
-            // ── Full Name ──────────────────────────────────────────────────────
-            Text(
-                text = "Full Name",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF212121)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            OutlinedTextField(
+            RegisterField(
+                label = "Full Name",
                 value = fullName,
-                onValueChange = { fullName = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Enter your full name", color = Color(0xFF9E9E9E)) },
-                leadingIcon = {
-                    Text(
-                        text = "👤",
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                },
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                    focusedBorderColor = Color(0xFF1565C0)
-                ),
-                singleLine = true
+                onValue = { fullName = it },
+                placeholder = "Enter your full name",
+                icon = "👤",
+                enabled = !isBusy
             )
+            Spacer(Modifier.height(18.dp))
 
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Email ──────────────────────────────────────────────────────────
-            Text(
-                text = "Email",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF212121)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            OutlinedTextField(
+            RegisterField(
+                label = "Email",
                 value = email,
-                onValueChange = { email = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Enter your email", color = Color(0xFF9E9E9E)) },
-                leadingIcon = {
-                    Text(
-                        text = "✉",
-                        fontSize = 18.sp,
-                        color = Color(0xFF9E9E9E),
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                    focusedBorderColor = Color(0xFF1565C0)
-                ),
-                singleLine = true
+                onValue = { email = it },
+                placeholder = "Enter your email",
+                icon = "✉",
+                keyboardType = KeyboardType.Email,
+                enabled = !isBusy
             )
+            Spacer(Modifier.height(18.dp))
 
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Password ───────────────────────────────────────────────────────
-            Text(
-                text = "Password",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF212121)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            OutlinedTextField(
+            PasswordField(
+                label = "Password",
                 value = password,
-                onValueChange = { password = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Create a password", color = Color(0xFF9E9E9E)) },
-                leadingIcon = {
-                    Text(
-                        text = "🔒",
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                },
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Text(
-                            text = if (passwordVisible) "🙈" else "👁",
-                            fontSize = 16.sp
-                        )
-                    }
-                },
-                visualTransformation = if (passwordVisible)
-                    VisualTransformation.None
-                else
-                    PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                    focusedBorderColor = Color(0xFF1565C0)
-                ),
-                singleLine = true
+                onValue = { password = it },
+                placeholder = "Create a password",
+                visible = passwordVisible,
+                onToggleVisibility = { passwordVisible = !passwordVisible },
+                enabled = !isBusy
             )
+            Spacer(Modifier.height(18.dp))
 
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── Confirm Password ───────────────────────────────────────────────
-            Text(
-                text = "Confirm Password",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF212121)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            OutlinedTextField(
+            PasswordField(
+                label = "Confirm Password",
                 value = confirmPassword,
-                onValueChange = { confirmPassword = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Confirm your password", color = Color(0xFF9E9E9E)) },
-                leadingIcon = {
-                    Text(
-                        text = "🔒",
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                },
-                trailingIcon = {
-                    IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
-                        Text(
-                            text = if (confirmPasswordVisible) "🙈" else "👁",
-                            fontSize = 16.sp
-                        )
-                    }
-                },
-                visualTransformation = if (confirmPasswordVisible)
-                    VisualTransformation.None
-                else
-                    PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                    focusedBorderColor = Color(0xFF1565C0)
-                ),
-                singleLine = true
+                onValue = { confirmPassword = it },
+                placeholder = "Confirm your password",
+                visible = confirmPasswordVisible,
+                onToggleVisibility = { confirmPasswordVisible = !confirmPasswordVisible },
+                enabled = !isBusy
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // ── Create Account Button ──────────────────────────────────────────
-            Button(
-                onClick = onCreateAccountClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1565C0)
-                )
-            ) {
-                Text(
-                    text = "Create Account",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            if (status is AuthResult.Error) {
+                Spacer(Modifier.height(12.dp))
+                Text(status.message, color = Color(0xFFC62828), fontSize = 13.sp)
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(28.dp))
 
-            // ── Already have an account ────────────────────────────────────────
+            Button(
+                onClick = {
+                    authViewModel.register(fullName, email, password, confirmPassword)
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                enabled = !isBusy
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp, color = Color.White
+                    )
+                } else {
+                    Text("Create Account", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             TextButton(
                 onClick = onLoginClick,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy
             ) {
                 Text(
                     text = buildAnnotatedString {
                         append("Already have an account? ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append("Login")
-                        }
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Login") }
                     },
                     color = Color(0xFF1565C0),
                     fontSize = 14.sp,
@@ -275,7 +178,73 @@ fun RegisterScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+@Composable
+private fun RegisterField(
+    label: String,
+    value: String,
+    onValue: (String) -> Unit,
+    placeholder: String,
+    icon: String,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    enabled: Boolean
+) {
+    Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF212121))
+    Spacer(Modifier.height(6.dp))
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValue,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text(placeholder, color = Color(0xFF9E9E9E)) },
+        leadingIcon = { Text(icon, fontSize = 16.sp, modifier = Modifier.padding(start = 4.dp)) },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        shape = RoundedCornerShape(10.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = Color(0xFFE0E0E0),
+            focusedBorderColor = Color(0xFF1565C0)
+        ),
+        singleLine = true,
+        enabled = enabled
+    )
+}
+
+@Composable
+private fun PasswordField(
+    label: String,
+    value: String,
+    onValue: (String) -> Unit,
+    placeholder: String,
+    visible: Boolean,
+    onToggleVisibility: () -> Unit,
+    enabled: Boolean
+) {
+    Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF212121))
+    Spacer(Modifier.height(6.dp))
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValue,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text(placeholder, color = Color(0xFF9E9E9E)) },
+        leadingIcon = { Text("🔒", fontSize = 16.sp, modifier = Modifier.padding(start = 4.dp)) },
+        trailingIcon = {
+            IconButton(onClick = onToggleVisibility) {
+                Text(if (visible) "🙈" else "👁", fontSize = 16.sp)
+            }
+        },
+        visualTransformation = if (visible) VisualTransformation.None
+        else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        shape = RoundedCornerShape(10.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = Color(0xFFE0E0E0),
+            focusedBorderColor = Color(0xFF1565C0)
+        ),
+        singleLine = true,
+        enabled = enabled
+    )
 }
