@@ -2,62 +2,67 @@ package com.example.urisis_android.urinalysis
 
 import com.example.urisis_android.bluetooth.HsvColor
 import com.example.urisis_android.bluetooth.SensorReading
-import kotlin.math.abs
 
+/**
+ * Hydration classifier.
+ *
+ * Public API unchanged from the previous rule-based implementation, but
+ * the internals now use Enhanced Fuzzy KNN ([FuzzyKnnClassifier]) trained
+ * on the Silver Swan classification table. The 8-class output is mapped
+ * back to [HydrationStatus] for the existing UI, with abnormal flags
+ * surfaced via [UrinalysisResult.activeFlags].
+ */
 object HydrationClassifier {
 
+    private val classifier = FuzzyKnnClassifier(TrainingData.samples)
+
     fun classify(r: SensorReading): UrinalysisResult? {
-        if (!r.isComplete) return null
-        val pH = r.pH!!
-        val sg = r.specificGravity!!
-        val color = r.color!!
+        val features = buildFeatures(r) ?: return null
+        val pH  = r.pH ?: return null
+        val tds = r.tdsPpm ?: return null
+        val sg  = r.specificGravity ?: return null
+        val color = r.color ?: return null
 
-        // ── Specific gravity score: 0 = dilute, 1 = very concentrated ──
-        val sgScore = when {
-            sg < 1.010f -> 0.10f
-            sg < 1.015f -> 0.30f
-            sg < 1.020f -> 0.55f
-            sg < 1.025f -> 0.75f
-            else        -> 0.90f
-        }
+        val knn = classifier.classify(features)
+        val dominant = knn.dominantLevel
+        val flags    = knn.activeFlags
+        val status   = HydrationStatus.fromUrineClass(dominant)
 
-        // ── Color score: pale = hydrated, deep amber = dehydrated ──
-        // Higher saturation + lower value → more concentrated urine
-        val satScore = (color.saturation / 100f).coerceIn(0f, 1f)
-        val darkScore = (1f - color.value / 100f).coerceIn(0f, 1f)
-        val colorScore = satScore * 0.6f + darkScore * 0.4f
-
-        // Weighted combination — SG dominates
-        val combined = sgScore * 0.6f + colorScore * 0.4f
-
-        val status = when {
-            combined < 0.25f -> HydrationStatus.WELL_HYDRATED
-            combined < 0.50f -> HydrationStatus.NORMAL
-            combined < 0.72f -> HydrationStatus.MILDLY_DEHYDRATED
-            else             -> HydrationStatus.DEHYDRATED
-        }
-
-        // Confidence = distance from the nearest decision boundary
-        val boundaries = listOf(0.25f, 0.50f, 0.72f)
-        val distance = boundaries.minOf { abs(combined - it) }
-        val confidence = (0.75f + distance * 1.2f).coerceIn(0.60f, 0.99f)
+        // Confidence reported to the UI is the dominant level's membership
+        // clamped to a presentation-friendly band. We avoid 0% / 100%
+        // because both feel pathological in clinical UIs.
+        val confidence = (knn.dominantLevelMembership)
+            .coerceIn(0.40f, 0.99f)
 
         return UrinalysisResult(
-            reading = r,
-            status = status,
-            confidence = confidence,
-            pHInRange = pH in UrinalysisResult.PH_MIN..UrinalysisResult.PH_MAX,
-            sgInRange = sg in UrinalysisResult.SG_MIN..UrinalysisResult.SG_MAX,
-            colorLabel = colorLabel(color)
+            reading     = r,
+            status      = status,
+            confidence  = confidence,
+            pHInRange   = pH in UrinalysisResult.PH_MIN..UrinalysisResult.PH_MAX,
+            sgInRange   = sg in UrinalysisResult.SG_MIN..UrinalysisResult.SG_MAX,
+            tdsInRange  = tds in UrinalysisResult.TDS_MIN..UrinalysisResult.TDS_MAX,
+            colorLabel  = colorLabel(color, flags),
+            urineClass  = dominant,
+            activeFlags = flags,
+            memberships = knn.memberships,
         )
     }
 
-    private fun colorLabel(c: HsvColor): String = when {
-        c.value > 90f && c.saturation < 15f -> "Clear"
-        c.value > 85f && c.saturation < 30f -> "Pale Yellow"
-        c.value > 75f && c.saturation < 50f -> "Pale — Amber"
-        c.value > 65f && c.saturation < 70f -> "Amber"
-        c.value > 50f                       -> "Dark Amber"
-        else                                -> "Deep Amber"
+    /**
+     * Surface flag info inline if the colour itself triggered FLAG_A.
+     * Callers that want pure colour name should consult the HSV directly.
+     */
+    private fun colorLabel(c: HsvColor, flags: List<UrineClass>): String {
+        if (UrineClass.FLAG_A in flags) {
+            return "Abnormal Colour"
+        }
+        return when {
+            c.value > 90f && c.saturation < 15f -> "Clear"
+            c.value > 85f && c.saturation < 30f -> "Pale Yellow"
+            c.value > 75f && c.saturation < 50f -> "Yellow"
+            c.value > 60f && c.saturation < 70f -> "Dark Yellow"
+            c.value > 45f                       -> "Amber"
+            else                                -> "Deep Amber / Honey"
+        }
     }
 }

@@ -56,14 +56,20 @@ fun MainDashboardScreen(
     userName: String,
     bleViewModel: BleViewModel,
     onConnectClick: () -> Unit = {},
-    onStartUrinalysisClick: () -> Unit = {},
+    onStartUrinalysisClick: (demo: Boolean) -> Unit = {},
     onHistoryClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {}
 ) {
     val bleState by bleViewModel.bleState.collectAsState()
     val isConnected = bleState.connectionState == BleConnectionState.CONNECTED
-    var demoMode by remember { mutableStateOf(true) }
+    // Demo mode is only meaningful when no device is connected. The toggle
+    // is hidden in the connected branch below, so this flag effectively
+    // governs the "no device" path. Force false once connected so a stale
+    // toggle from a previous session can't accidentally route real data
+    // through the demo synthesizer.
+    var demoMode by remember { mutableStateOf(false) }
+    val effectiveDemo = demoMode && !isConnected
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -188,12 +194,17 @@ fun MainDashboardScreen(
                         }
                     }
 
-                    // Demo mode toggle
+                    // Demo mode toggle — when ON, "Start Urinalysis" runs
+                    // the synthetic generator instead of waiting for BLE data.
+                    // Useful for screen demos and algorithm verification.
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F0)),
-                        elevation = CardDefaults.cardElevation(0.dp)
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (demoMode) Color(0xFFFFF3E0)
+                            else Color(0xFFFFF8F0)
+                        ),
+                        elevation = CardDefaults.cardElevation(0.dp),
                     ) {
                         Row(
                             modifier = Modifier
@@ -203,19 +214,25 @@ fun MainDashboardScreen(
                         ) {
                             Text("📊", fontSize = 18.sp)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Demo mode",
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 14.sp,
-                                color = Color(0xFF212121)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "•  Simulated data",
-                                fontSize = 13.sp,
-                                color = Color(0xFF9E9E9E),
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Demo mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF212121)
+                                )
+                                Text(
+                                    text = if (demoMode)
+                                        "ON — tests will use synthetic data"
+                                    else
+                                        "OFF — connect a device to run a test",
+                                    fontSize = 12.sp,
+                                    color = if (demoMode) Color(0xFFE65100)
+                                    else Color(0xFF9E9E9E),
+                                    fontWeight = if (demoMode) FontWeight.SemiBold
+                                    else FontWeight.Normal
+                                )
+                            }
                             Switch(
                                 checked = demoMode,
                                 onCheckedChange = { demoMode = it },
@@ -349,10 +366,17 @@ fun MainDashboardScreen(
                         .clip(RoundedCornerShape(18.dp))
                         .background(
                             Brush.horizontalGradient(
-                                colors = listOf(Color(0xFF1565C0), Color(0xFF42A5F5))
+                                colors = if (effectiveDemo) {
+                                    // Orange tint matches the demo card so the
+                                    // user has a clear visual cue they're about
+                                    // to run a simulated test, not a real one.
+                                    listOf(Color(0xFFE65100), Color(0xFFFF9800))
+                                } else {
+                                    listOf(Color(0xFF1565C0), Color(0xFF42A5F5))
+                                }
                             )
                         )
-                        .clickable { onStartUrinalysisClick() }
+                        .clickable { onStartUrinalysisClick(effectiveDemo) }
                         .padding(20.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -362,19 +386,27 @@ fun MainDashboardScreen(
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(Color.White.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
-                        ) { Text("🧪", fontSize = 26.sp) }
+                        ) {
+                            Text(
+                                if (effectiveDemo) "🧪" else "🧪",
+                                fontSize = 26.sp
+                            )
+                        }
 
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Start Urinalysis",
+                                if (effectiveDemo) "Start Demo Test"
+                                else "Start Urinalysis",
                                 color = Color.White,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Begin a new hydration test",
+                                if (effectiveDemo)
+                                    "Generate synthetic data — no device needed"
+                                else "Begin a new hydration test",
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 13.sp
                             )

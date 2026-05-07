@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,8 +23,15 @@ import com.example.urisis_android.screens.MedicalDisclaimerScreen
 import com.example.urisis_android.screens.PreTestProtocolScreen
 import com.example.urisis_android.screens.RegisterScreen
 import com.example.urisis_android.screens.SplashScreen
+import com.example.urisis_android.screens.TestHistoryScreen
 import com.example.urisis_android.screens.TestResultsScreen
 import com.example.urisis_android.screens.WaitingForDeviceScreen
+
+import com.example.urisis_android.screens.AdvancedResultsScreen
+import com.example.urisis_android.screens.AdvancedSensorDataScreen
+
+import com.example.urisis_android.urinalysis.HistoryViewModel
+import com.example.urisis_android.urinalysis.HistoryViewModelFactory
 import com.example.urisis_android.urinalysis.UrinalysisViewModel
 import com.example.urisis_android.urinalysis.UrinalysisViewModelFactory
 
@@ -41,19 +49,32 @@ class MainActivity : ComponentActivity() {
             val bleViewModel: BleViewModel = viewModel()
             val authViewModel: AuthViewModel = viewModel()
             val urinalysisViewModel: UrinalysisViewModel = viewModel(
-                factory = UrinalysisViewModelFactory(bleViewModel)
+                factory = UrinalysisViewModelFactory(application, bleViewModel)
+            )
+            val historyViewModel: HistoryViewModel = viewModel(
+                factory = HistoryViewModelFactory(application)
             )
 
             val authState by authViewModel.ui.collectAsState()
             val currentUser = authState.currentUser
 
+            // Keep both VMs aware of the active user so persistence and
+            // history reads are always scoped to the right account.
+            LaunchedEffect(currentUser?.email) {
+                urinalysisViewModel.setActiveUser(currentUser?.email)
+                historyViewModel.setUser(currentUser?.email)
+            }
+
             var screen by remember { mutableStateOf("splash") }
+            // Carries the demo-mode choice from the dashboard through the
+            // protocol screen into beginSession(). Reset on every fresh
+            // navigation so a stale value can't survive a session.
+            var pendingDemoMode by remember { mutableStateOf(false) }
 
             when (screen) {
 
                 "splash" -> SplashScreen(
                     onFinished = {
-                        // If a session was restored while splash was up, skip login
                         screen = if (currentUser != null) "dashboard" else "disclaimer"
                     }
                 )
@@ -76,7 +97,6 @@ class MainActivity : ComponentActivity() {
                 )
 
                 "dashboard" -> {
-                    // Defensive: if session was cleared somewhere, bounce to loginPage
                     if (currentUser == null) {
                         screen = "login"
                     } else {
@@ -84,11 +104,14 @@ class MainActivity : ComponentActivity() {
                             userName = currentUser.fullName,
                             bleViewModel = bleViewModel,
                             onConnectClick = { screen = "connect" },
-                            onStartUrinalysisClick = {
+                            onStartUrinalysisClick = { demo ->
                                 urinalysisViewModel.reset()
+                                // Stash demo intent so the protocol screen can
+                                // route correctly when the user taps Continue.
+                                pendingDemoMode = demo
                                 screen = "protocol"
                             },
-                            onHistoryClick = { /* TODO */ },
+                            onHistoryClick = { screen = "history" },
                             onProfileClick = { /* TODO */ },
                             onLogoutClick = {
                                 bleViewModel.disconnect()
@@ -108,7 +131,11 @@ class MainActivity : ComponentActivity() {
                 "protocol" -> PreTestProtocolScreen(
                     onBackClick = { screen = "dashboard" },
                     onContinueClick = {
-                        urinalysisViewModel.beginSession(demo = true)
+                        // demo flag comes from the dashboard toggle. When
+                        // true the ViewModel synthesizes data without
+                        // entering BLE listening mode; when false it
+                        // subscribes to incoming JSON from the Arduino.
+                        urinalysisViewModel.beginSession(demo = pendingDemoMode)
                         screen = "waiting"
                     }
                 )
@@ -127,6 +154,7 @@ class MainActivity : ComponentActivity() {
                     onComplete = { screen = "results" }
                 )
 
+                // ✅ UPDATED RESULTS SCREEN
                 "results" -> TestResultsScreen(
                     viewModel = urinalysisViewModel,
                     onBackClick = {
@@ -137,7 +165,28 @@ class MainActivity : ComponentActivity() {
                         urinalysisViewModel.reset()
                         screen = "dashboard"
                     },
-                    onViewHistoryClick = { /* TODO */ }
+                    onViewHistoryClick = { screen = "history" },
+
+                    // 👉 MAKE SURE THIS EXISTS IN YOUR SCREEN
+                    onAdvancedClick = { screen = "advanced_gate" }
+                )
+
+                // ✅ NEW SCREEN 1
+                "advanced_gate" -> AdvancedResultsScreen(
+                    onUnderstand = { screen = "advanced_data" },
+                    onGoBack = { screen = "results" }
+                )
+
+                // ✅ NEW SCREEN 2
+                "advanced_data" -> AdvancedSensorDataScreen(
+                    viewModel = urinalysisViewModel,
+                    onBackClick = { screen = "advanced_gate" }
+                )
+
+                // History — modern view with trend charts + all-tests list
+                "history" -> TestHistoryScreen(
+                    viewModel = historyViewModel,
+                    onBack = { screen = "dashboard" }
                 )
             }
         }

@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
@@ -15,6 +16,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @SuppressLint("MissingPermission") // permissions verified via hasPermissions()
 class BleManager(private val context: Context) {
@@ -44,17 +47,30 @@ class BleManager(private val context: Context) {
     val state: StateFlow<BleState> = _state.asStateFlow()
 
     private var gatt: BluetoothGatt? = null
+    private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var scanJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // Drop any device not seen in this window while scanning
     private val staleThresholdMs = 10_000L
 
-    // Raw text notifications coming in from the Arduino characteristic
+    // Complete JSON documents — emitted only after full reassembly from
+    // the Arduino's 20-byte chunks.
     private val _incoming = MutableSharedFlow<String>(
         replay = 0, extraBufferCapacity = 32
     )
     val incoming: SharedFlow<String> = _incoming
+
+    // Reassembles partial chunks into full JSON. Populated lazily once
+    // the GATT scope exists.
+    private val assembler = JsonChunkAssembler(
+        onDocument = { doc ->
+            scope.launch { _incoming.emit(doc) }
+        },
+        onProtocolError = { msg ->
+            Log.w(TAG, "[assembler] $msg")
+        }
+    )
 
     // ─ Scan callback — fires every time a BLE advertisement is received ────
     private val scanCallback = object : ScanCallback() {
@@ -163,6 +179,7 @@ class BleManager(private val context: Context) {
     fun connect(device: BleDevice) {
         val remote: BluetoothDevice = adapter?.getRemoteDevice(device.address) ?: return
         stopScan()
+        assembler.reset()
         _state.update {
             it.copy(
                 connectionState = BleConnectionState.CONNECTING,
@@ -170,7 +187,11 @@ class BleManager(private val context: Context) {
                 errorMessage = null
             )
         }
-        gatt = remote.connectGatt(context, false, gattCallback)
+        gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            remote.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        } else {
+            remote.connectGatt(context, false, gattCallback)
+        }
     }
 
     fun disconnect() {
@@ -178,18 +199,65 @@ class BleManager(private val context: Context) {
         gatt?.disconnect()
     }
 
-    // ─ GATT callback — connection + incoming notifications ────────────────
+    /**
+     * Write a JSON command to the Arduino's RX characteristic, chunked
+     * into 20-byte writes to fit the default GATT MTU.
+     *
+     * Arduino's onDataReceived currently just logs incoming JSON — this
+     * is a forward-compatible path for future commands.
+     *
+     * @return true if all chunks were queued, false otherwise.
+     */
+    fun sendJson(json: String): Boolean {
+        val rx = rxCharacteristic ?: return false
+        val g = gatt ?: return false
+
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        val chunkSize = 20
+
+        var offset = 0
+        while (offset < bytes.size) {
+            val len = minOf(chunkSize, bytes.size - offset)
+            val chunk = bytes.copyOfRange(offset, offset + len)
+
+            val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                g.writeCharacteristic(
+                    rx, chunk, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                ) == BluetoothGatt.GATT_SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                rx.value = chunk
+                @Suppress("DEPRECATION")
+                g.writeCharacteristic(rx)
+            }
+
+            if (!ok) {
+                Log.w(TAG, "writeCharacteristic returned false at offset $offset")
+                return false
+            }
+            offset += len
+            // Spacing between chunks — same approach as the Arduino's TX loop
+            try { Thread.sleep(15) } catch (_: InterruptedException) {}
+        }
+        return true
+    }
+
+    // ─ GATT callback — connection + service discovery + notifications ─────
     private val gattCallback = object : BluetoothGattCallback() {
 
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
+                    Log.i(TAG, "GATT connected — discovering services")
                     _state.update { it.copy(connectionState = BleConnectionState.CONNECTED) }
                     g.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
+                    Log.i(TAG, "GATT disconnected (status=$status)")
                     g.close()
                     gatt = null
+                    rxCharacteristic = null
+                    assembler.reset()
                     _state.update {
                         it.copy(
                             connectionState = BleConnectionState.IDLE,
@@ -200,13 +268,111 @@ class BleManager(private val context: Context) {
             }
         }
 
+        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.w(TAG, "Service discovery failed: $status")
+                _state.update {
+                    it.copy(
+                        connectionState = BleConnectionState.ERROR,
+                        errorMessage = "Service discovery failed (status $status)"
+                    )
+                }
+                return
+            }
+
+            val service = g.getService(BleConstants.SERVICE_DEVICE_INFO)
+            if (service == null) {
+                _state.update {
+                    it.copy(
+                        connectionState = BleConnectionState.ERROR,
+                        errorMessage = "Device Information service (180A) not found"
+                    )
+                }
+                return
+            }
+
+            val tx = service.getCharacteristic(BleConstants.CHAR_DATA_TX)
+            rxCharacteristic = service.getCharacteristic(BleConstants.CHAR_DATA_RX)
+            if (tx == null) {
+                _state.update {
+                    it.copy(
+                        connectionState = BleConnectionState.ERROR,
+                        errorMessage = "TX characteristic (2A37) not found"
+                    )
+                }
+                return
+            }
+
+            // Enable notifications on the TX characteristic so the
+            // Arduino's chunked JSON arrives via onCharacteristicChanged.
+            if (!g.setCharacteristicNotification(tx, true)) {
+                _state.update {
+                    it.copy(
+                        connectionState = BleConnectionState.ERROR,
+                        errorMessage = "Failed to enable TX notifications"
+                    )
+                }
+                return
+            }
+
+            val descriptor = tx.getDescriptor(BleConstants.CCC_DESCRIPTOR)
+            if (descriptor == null) {
+                _state.update {
+                    it.copy(
+                        connectionState = BleConnectionState.ERROR,
+                        errorMessage = "TX has no CCCD descriptor"
+                    )
+                }
+                return
+            }
+
+            // Write the CCCD value to actually subscribe to notifications.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                g.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            } else {
+                @Suppress("DEPRECATION")
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                g.writeDescriptor(descriptor)
+            }
+        }
+
+        override fun onDescriptorWrite(
+            g: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            status: Int
+        ) {
+            if (descriptor.uuid == BleConstants.CCC_DESCRIPTOR) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    Log.i(TAG, "TX notifications enabled — ready for data")
+                } else {
+                    Log.w(TAG, "CCCD write failed: $status")
+                }
+            }
+        }
+
+        // Pre-Android 13 notification callback
+        @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(
             g: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic
         ) {
-            val bytes = characteristic.value ?: return
-            val text = runCatching { String(bytes) }.getOrNull() ?: return
-            scope.launch { _incoming.emit(text.trim()) }
+            handleNotification(characteristic.uuid, characteristic.value ?: return)
+        }
+
+        // Android 13+ notification callback
+        override fun onCharacteristicChanged(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            handleNotification(characteristic.uuid, value)
+        }
+
+        private fun handleNotification(uuid: UUID, value: ByteArray) {
+            if (uuid == BleConstants.CHAR_DATA_TX) {
+                assembler.feed(value)
+            }
         }
     }
 
@@ -214,6 +380,12 @@ class BleManager(private val context: Context) {
         stopScan()
         runCatching { gatt?.close() }
         gatt = null
+        rxCharacteristic = null
+        assembler.reset()
         scope.cancel()
+    }
+
+    companion object {
+        private const val TAG = "BleManager"
     }
 }

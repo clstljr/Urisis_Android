@@ -4,11 +4,18 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.example.urisis_android.urinalysis.TestRecordDao
+import com.example.urisis_android.urinalysis.TestRecordEntity
 
-@Database(entities = [User::class], version = 1, exportSchema = false)
+@Database(
+    entities = [User::class, TestRecordEntity::class],
+    version = 2,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun userDao(): UserDao
+    abstract fun testRecordDao(): TestRecordDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -19,7 +26,14 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "urisis.db"
-                ).build().also { INSTANCE = it }
+                )
+                    // No formal migration: existing installs only contain
+                    // user accounts (which the user can re-create) and have
+                    // no test history yet. Drop the old DB rather than
+                    // ship a 1→2 migration that doesn't add value.
+                    .fallbackToDestructiveMigration()
+                    .build()
+                    .also { INSTANCE = it }
             }
     }
 }
