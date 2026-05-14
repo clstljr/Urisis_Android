@@ -47,23 +47,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material3.Icon
 import com.example.urisis_android.bluetooth.BleConnectionState
 import com.example.urisis_android.bluetooth.BleViewModel
+import com.example.urisis_android.ui.illustrations.avatarColors
+import com.example.urisis_android.ui.illustrations.initialsFor
 import com.example.urisis_android.util.Greeting
 
 @Composable
 fun MainDashboardScreen(
     userName: String,
+    userEmail: String,
     bleViewModel: BleViewModel,
     onConnectClick: () -> Unit = {},
     onStartUrinalysisClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {},
-    onLogoutClick: () -> Unit = {}
+    onAccountClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {},
 ) {
     val bleState by bleViewModel.bleState.collectAsState()
     val isConnected = bleState.connectionState == BleConnectionState.CONNECTED
-    var demoMode by remember { mutableStateOf(true) }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -113,14 +118,34 @@ fun MainDashboardScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Account avatar chip — opens the AccountSwitcherSheet
+                    val (avBg, avFg) = remember(userEmail) {
+                        avatarColors(userEmail)
+                    }
+                    val initials = remember(userName, userEmail) {
+                        initialsFor(userName, userEmail)
+                    }
                     Box(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.2f))
-                            .clickable { onProfileClick() },
+                            .background(Color.White.copy(alpha = 0.95f))
+                            .clickable { onAccountClick() },
                         contentAlignment = Alignment.Center
-                    ) { Text("👤", fontSize = 18.sp) }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(avBg),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(initials,
+                                color = avFg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold)
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
@@ -129,7 +154,14 @@ fun MainDashboardScreen(
                             .background(Color.White.copy(alpha = 0.2f))
                             .clickable { onLogoutClick() },
                         contentAlignment = Alignment.Center
-                    ) { Text("↪", fontSize = 18.sp, color = Color.White) }
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Sign out",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
 
@@ -185,45 +217,6 @@ fun MainDashboardScreen(
                                 )
                             }
                             Text("›", fontSize = 22.sp, color = Color(0xFF9E9E9E))
-                        }
-                    }
-
-                    // Demo mode toggle
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F0)),
-                        elevation = CardDefaults.cardElevation(0.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("📊", fontSize = 18.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Demo mode",
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 14.sp,
-                                color = Color(0xFF212121)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "•  Simulated data",
-                                fontSize = 13.sp,
-                                color = Color(0xFF9E9E9E),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Switch(
-                                checked = demoMode,
-                                onCheckedChange = { demoMode = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = Color(0xFFFF9800)
-                                )
-                            )
                         }
                     }
 
@@ -352,7 +345,7 @@ fun MainDashboardScreen(
                                 colors = listOf(Color(0xFF1565C0), Color(0xFF42A5F5))
                             )
                         )
-                        .clickable { onStartUrinalysisClick() }
+                        .clickable(enabled = isConnected) { onStartUrinalysisClick() }
                         .padding(20.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -362,7 +355,9 @@ fun MainDashboardScreen(
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(Color.White.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
-                        ) { Text("🧪", fontSize = 26.sp) }
+                        ) {
+                            Text("🧪", fontSize = 26.sp)
+                        }
 
                         Spacer(modifier = Modifier.width(16.dp))
 
@@ -374,7 +369,8 @@ fun MainDashboardScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Begin a new hydration test",
+                                if (isConnected) "Begin a new hydration test"
+                                else "Connect a device first",
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 13.sp
                             )

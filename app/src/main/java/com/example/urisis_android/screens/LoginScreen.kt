@@ -1,15 +1,51 @@
 package com.example.urisis_android.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -20,21 +56,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.urisis_android.auth.AuthResult
 import com.example.urisis_android.auth.AuthViewModel
+import com.example.urisis_android.ui.illustrations.HydrationHero
+import com.example.urisis_android.ui.theme.brandBrush
 
 @Composable
 fun LoginScreen(
     authViewModel: AuthViewModel,
     onLoginSuccess: () -> Unit,
-    onRegisterClick: () -> Unit
+    onRegisterClick: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("") }
+    var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
     val state by authViewModel.ui.collectAsState()
     val status = state.status
+    val dark = isSystemInDarkTheme()
 
-    // React to auth result
     LaunchedEffect(status) {
         if (status is AuthResult.Success) {
             authViewModel.consumeResult()
@@ -42,147 +80,245 @@ fun LoginScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF1565C0), Color(0xFF00ACC1))
-                        )
-                    )
-                    .padding(vertical = 28.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Smart Urinalysis",
-                        color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Hydration Monitoring System",
-                        color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
-                }
-            }
-        },
-        bottomBar = {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    "Your data stays on this device. No account information is sent online.",
-                    color = Color(0xFF9E9E9E),
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
-        },
-        containerColor = Color.White
-    ) { padding ->
+    val isLoading = status is AuthResult.Loading
+    val errorMessage = (status as? AuthResult.Error)?.message
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-            Spacer(Modifier.height(32.dp))
-
-            Text("Login to Continue",
-                fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF212121))
-
-            Spacer(Modifier.height(28.dp))
-
-            FieldLabel("Email")
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Enter your email", color = Color(0xFF9E9E9E)) },
-                leadingIcon = { Text("✉", fontSize = 18.sp,
-                    color = Color(0xFF9E9E9E),
-                    modifier = Modifier.padding(start = 4.dp)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                shape = RoundedCornerShape(10.dp),
-                colors = filledFieldColors(),
-                singleLine = true,
-                enabled = status !is AuthResult.Loading
-            )
-
-            Spacer(Modifier.height(18.dp))
-
-            FieldLabel("Password")
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Enter your password", color = Color(0xFF9E9E9E)) },
-                leadingIcon = { Text("🔒", fontSize = 16.sp,
-                    modifier = Modifier.padding(start = 4.dp)) },
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Text(if (passwordVisible) "🙈" else "👁", fontSize = 16.sp)
-                    }
-                },
-                visualTransformation = if (passwordVisible) VisualTransformation.None
-                else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                shape = RoundedCornerShape(10.dp),
-                colors = filledFieldColors(),
-                singleLine = true,
-                enabled = status !is AuthResult.Loading
-            )
-
-            if (status is AuthResult.Error) {
-                Spacer(Modifier.height(10.dp))
-                Text(status.message, color = Color(0xFFC62828), fontSize = 13.sp)
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = { authViewModel.login(email, password) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                enabled = status !is AuthResult.Loading
+            // Hero header with gradient + Compose-drawn illustration
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(brandBrush(dark))
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 56.dp, bottom = 56.dp),
             ) {
-                if (status is AuthResult.Loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp, color = Color.White
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()) {
+                    HydrationHero(heroSize = 110.dp, onColored = true)
+
+                    Spacer(Modifier.height(18.dp))
+                    Text("Welcome Back",
+                        color = Color.White,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.5.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Sign in to continue tracking your hydration",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
                     )
-                } else {
-                    Text("Login", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedButton(
-                onClick = onRegisterClick,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.5.dp, Color(0xFF1565C0)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1565C0)),
-                enabled = status !is AuthResult.Loading
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .offset(y = (-24).dp)
             ) {
-                Text("Register", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    elevation = CardDefaults.cardElevation(8.dp),
+                ) {
+                    Column(modifier = Modifier.padding(22.dp)) {
+                        Text("Sign in",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text("Use your email or username and password",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        Spacer(Modifier.height(20.dp))
+
+                        OutlinedTextField(
+                            value = identifier,
+                            onValueChange = { identifier = it },
+                            label = { Text("Email or username") },
+                            placeholder = { Text("you@example.com or jane_doe") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email
+                            ),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Email,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Password") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password
+                            ),
+                            visualTransformation = if (passwordVisible)
+                                VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Lock,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        imageVector = if (passwordVisible)
+                                            Icons.Filled.VisibilityOff
+                                        else Icons.Filled.Visibility,
+                                        contentDescription = if (passwordVisible)
+                                            "Hide password" else "Show password",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+
+                        if (errorMessage != null) {
+                            Spacer(Modifier.height(10.dp))
+                            ErrorBanner(errorMessage)
+                        }
+
+                        Spacer(Modifier.height(20.dp))
+
+                        Button(
+                            onClick = { authViewModel.login(identifier, password) },
+                            enabled = !isLoading
+                                    && identifier.isNotBlank()
+                                    && password.isNotBlank(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor   = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            } else {
+                                Text("Sign in",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(Modifier.height(18.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(1.dp)
+                                    .background(MaterialTheme.colorScheme.outline)
+                            )
+                            Text("  or  ",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(1.dp)
+                                    .background(MaterialTheme.colorScheme.outline)
+                            )
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Text("New to Urisis?",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Create an account",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { onRegisterClick() },
+                            )
+                        }
+                    }
+                }
             }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun FieldLabel(text: String) {
-    Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF212121))
-    Spacer(Modifier.height(6.dp))
+internal fun ErrorBanner(message: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(10.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Warning,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            message,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            fontWeight = FontWeight.Medium,
+        )
+    }
 }
 
-@Composable
-private fun filledFieldColors() = OutlinedTextFieldDefaults.colors(
-    unfocusedContainerColor = Color(0xFFF0F4F8),
-    focusedContainerColor = Color(0xFFF0F4F8),
-    unfocusedBorderColor = Color.Transparent,
-    focusedBorderColor = Color(0xFF1565C0)
-)
+// Hidden helper to keep the offset-by-Dp call site from importing a private fn
+private fun Modifier.unused() = this
