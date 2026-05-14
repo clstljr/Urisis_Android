@@ -47,29 +47,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material3.Icon
 import com.example.urisis_android.bluetooth.BleConnectionState
 import com.example.urisis_android.bluetooth.BleViewModel
+import com.example.urisis_android.ui.illustrations.avatarColors
+import com.example.urisis_android.ui.illustrations.initialsFor
 import com.example.urisis_android.util.Greeting
 
 @Composable
 fun MainDashboardScreen(
     userName: String,
+    userEmail: String,
     bleViewModel: BleViewModel,
     onConnectClick: () -> Unit = {},
-    onStartUrinalysisClick: (demo: Boolean) -> Unit = {},
+    onStartUrinalysisClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {},
-    onLogoutClick: () -> Unit = {}
+    onAccountClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {},
 ) {
     val bleState by bleViewModel.bleState.collectAsState()
     val isConnected = bleState.connectionState == BleConnectionState.CONNECTED
-    // Demo mode is only meaningful when no device is connected. The toggle
-    // is hidden in the connected branch below, so this flag effectively
-    // governs the "no device" path. Force false once connected so a stale
-    // toggle from a previous session can't accidentally route real data
-    // through the demo synthesizer.
-    var demoMode by remember { mutableStateOf(false) }
-    val effectiveDemo = demoMode && !isConnected
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -119,14 +118,34 @@ fun MainDashboardScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Account avatar chip — opens the AccountSwitcherSheet
+                    val (avBg, avFg) = remember(userEmail) {
+                        avatarColors(userEmail)
+                    }
+                    val initials = remember(userName, userEmail) {
+                        initialsFor(userName, userEmail)
+                    }
                     Box(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.2f))
-                            .clickable { onProfileClick() },
+                            .background(Color.White.copy(alpha = 0.95f))
+                            .clickable { onAccountClick() },
                         contentAlignment = Alignment.Center
-                    ) { Text("👤", fontSize = 18.sp) }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(avBg),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(initials,
+                                color = avFg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold)
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
@@ -135,7 +154,14 @@ fun MainDashboardScreen(
                             .background(Color.White.copy(alpha = 0.2f))
                             .clickable { onLogoutClick() },
                         contentAlignment = Alignment.Center
-                    ) { Text("↪", fontSize = 18.sp, color = Color.White) }
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Sign out",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
 
@@ -191,56 +217,6 @@ fun MainDashboardScreen(
                                 )
                             }
                             Text("›", fontSize = 22.sp, color = Color(0xFF9E9E9E))
-                        }
-                    }
-
-                    // Demo mode toggle — when ON, "Start Urinalysis" runs
-                    // the synthetic generator instead of waiting for BLE data.
-                    // Useful for screen demos and algorithm verification.
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (demoMode) Color(0xFFFFF3E0)
-                            else Color(0xFFFFF8F0)
-                        ),
-                        elevation = CardDefaults.cardElevation(0.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("📊", fontSize = 18.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Demo mode",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF212121)
-                                )
-                                Text(
-                                    text = if (demoMode)
-                                        "ON — tests will use synthetic data"
-                                    else
-                                        "OFF — connect a device to run a test",
-                                    fontSize = 12.sp,
-                                    color = if (demoMode) Color(0xFFE65100)
-                                    else Color(0xFF9E9E9E),
-                                    fontWeight = if (demoMode) FontWeight.SemiBold
-                                    else FontWeight.Normal
-                                )
-                            }
-                            Switch(
-                                checked = demoMode,
-                                onCheckedChange = { demoMode = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = Color(0xFFFF9800)
-                                )
-                            )
                         }
                     }
 
@@ -366,17 +342,10 @@ fun MainDashboardScreen(
                         .clip(RoundedCornerShape(18.dp))
                         .background(
                             Brush.horizontalGradient(
-                                colors = if (effectiveDemo) {
-                                    // Orange tint matches the demo card so the
-                                    // user has a clear visual cue they're about
-                                    // to run a simulated test, not a real one.
-                                    listOf(Color(0xFFE65100), Color(0xFFFF9800))
-                                } else {
-                                    listOf(Color(0xFF1565C0), Color(0xFF42A5F5))
-                                }
+                                colors = listOf(Color(0xFF1565C0), Color(0xFF42A5F5))
                             )
                         )
-                        .clickable { onStartUrinalysisClick(effectiveDemo) }
+                        .clickable(enabled = isConnected) { onStartUrinalysisClick() }
                         .padding(20.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -387,26 +356,21 @@ fun MainDashboardScreen(
                                 .background(Color.White.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                if (effectiveDemo) "🧪" else "🧪",
-                                fontSize = 26.sp
-                            )
+                            Text("🧪", fontSize = 26.sp)
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                if (effectiveDemo) "Start Demo Test"
-                                else "Start Urinalysis",
+                                "Start Urinalysis",
                                 color = Color.White,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                if (effectiveDemo)
-                                    "Generate synthetic data — no device needed"
-                                else "Begin a new hydration test",
+                                if (isConnected) "Begin a new hydration test"
+                                else "Connect a device first",
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 13.sp
                             )

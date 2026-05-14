@@ -35,4 +35,7 @@ interface TestRecordDao {
 
     @Query("SELECT COUNT(*) FROM test_records WHERE userEmail = :userEmail")
     fun countForUser(userEmail: String): Flow<Int>
+
+    @Query("SELECT * FROM test_records WHERE id = :id LIMIT 1")
+    suspend fun findById(id: Long): TestRecordEntity?
 }

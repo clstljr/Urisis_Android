@@ -32,7 +32,7 @@ enum class HydrationStatus(
     OVERHYDRATED(
         "OVERHYDRATED",
         "Your urine is unusually dilute.",
-        "If this persists, consult a physician — could indicate excessive water intake or kidney function changes."
+        "If this persists, consider reviewing your fluid intake and consult a healthcare professional."
     ),
     WELL_HYDRATED(
         "WELL HYDRATED",

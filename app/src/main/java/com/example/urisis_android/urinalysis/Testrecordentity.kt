@@ -28,10 +28,19 @@ data class TestRecordEntity(
     val pH: Float,
     val tdsPpm: Float,
     val tempC: Float,
-    val rgbR: Int,
-    val rgbG: Int,
-    val rgbB: Int,
-    val rgbHex: String?,
+
+    // Camera RGB (preferred classifier input — direct sample view)
+    val cameraR: Int,
+    val cameraG: Int,
+    val cameraB: Int,
+    val cameraHex: String?,
+
+    // TCS34725 sensor RGB (reflected light off the strip).
+    // Nullable so older records (or reads with no sensor) round-trip cleanly.
+    val sensorR: Int?,
+    val sensorG: Int?,
+    val sensorB: Int?,
+    val sensorHex: String?,
 
     // Range checks
     val pHInRange: Boolean,
@@ -44,4 +53,6 @@ data class TestRecordEntity(
     val confidence: Float,
     val activeFlagsCsv: String,           // "FLAG_A,FLAG_B" or empty
     val dominantMembership: Float,
+    /** Memberships for ALL classes, encoded as JSON: {"LEVEL_1":0.05,...}. */
+    val membershipsJson: String? = null,
 )

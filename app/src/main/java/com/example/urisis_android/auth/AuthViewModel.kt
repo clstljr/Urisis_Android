@@ -4,8 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -18,37 +21,52 @@ sealed interface AuthResult {
 
 data class AuthUiState(
     val status: AuthResult = AuthResult.Idle,
-    val currentUser: User? = null
+    val currentUser: User? = null,
+    /**
+     * True once the initial DataStore restore has completed, so the
+     * splash screen can route correctly without racing the disk read.
+     */
+    val isInitialized: Boolean = false,
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private val userDao = AppDatabase.get(application).userDao()
-    private val session = UserSession(application.applicationContext)
+    private val accounts = AccountStore(application.applicationContext)
 
     private val _ui = MutableStateFlow(AuthUiState())
     val ui: StateFlow<AuthUiState> = _ui.asStateFlow()
 
+    val storedAccounts: StateFlow<List<AccountStore.StoredAccount>> =
+        accounts.accounts.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList(),
+        )
+
     init {
-        // Restore session on app launch
         viewModelScope.launch {
-            session.current.collect { saved ->
-                if (saved != null) {
-                    val user = userDao.findByEmail(saved.email)
-                    if (user != null) _ui.update { it.copy(currentUser = user) }
-                }
-            }
+            val activeEmail = accounts.activeEmail.first()
+            val user = activeEmail?.let { userDao.findByEmail(it) }
+            _ui.update { it.copy(currentUser = user, isInitialized = true) }
         }
     }
 
-    fun register(fullName: String, email: String, password: String, confirmPassword: String) {
+    fun register(
+        fullName: String,
+        username: String,
+        email: String,
+        password: String,
+        confirmPassword: String,
+    ) {
         viewModelScope.launch {
             _ui.update { it.copy(status = AuthResult.Loading) }
 
-            val nameTrim = fullName.trim()
-            val emailTrim = email.trim().lowercase()
+            val nameTrim     = fullName.trim()
+            val usernameTrim = username.trim().lowercase()
+            val emailTrim    = email.trim().lowercase()
 
-            val err = validate(nameTrim, emailTrim, password, confirmPassword)
+            val err = validate(nameTrim, usernameTrim, emailTrim, password, confirmPassword)
             if (err != null) {
                 _ui.update { it.copy(status = AuthResult.Error(err)) }
                 return@launch
@@ -57,19 +75,26 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 _ui.update { it.copy(status = AuthResult.Error("An account with this email already exists")) }
                 return@launch
             }
+            if (userDao.findByUsername(usernameTrim) != null) {
+                _ui.update { it.copy(status = AuthResult.Error("That username is already taken")) }
+                return@launch
+            }
 
             val salt = PasswordHasher.newSalt()
             val hash = PasswordHasher.hash(password, salt)
             val user = User(
                 email = emailTrim,
+                username = usernameTrim,
                 fullName = nameTrim,
                 passwordHash = hash,
                 passwordSalt = salt
             )
             runCatching { userDao.insert(user) }
                 .onSuccess {
-                    session.save(user.email, user.fullName)
-                    _ui.update { it.copy(status = AuthResult.Success(user), currentUser = user) }
+                    accounts.addAndActivate(user.email, user.fullName)
+                    _ui.update {
+                        it.copy(status = AuthResult.Success(user), currentUser = user)
+                    }
                 }
                 .onFailure {
                     _ui.update { it.copy(status = AuthResult.Error("Could not create account")) }
@@ -77,46 +102,90 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun login(email: String, password: String) {
+    /** Authenticate using either an email address *or* a username. */
+    fun login(identifier: String, password: String) {
         viewModelScope.launch {
             _ui.update { it.copy(status = AuthResult.Loading) }
 
-            val emailTrim = email.trim().lowercase()
-            if (emailTrim.isBlank() || password.isBlank()) {
-                _ui.update { it.copy(status = AuthResult.Error("Enter email and password")) }
+            val idTrim = identifier.trim().lowercase()
+            if (idTrim.isBlank() || password.isBlank()) {
+                _ui.update { it.copy(status = AuthResult.Error("Enter your email/username and password")) }
                 return@launch
             }
 
-            val user = userDao.findByEmail(emailTrim)
+            val user = userDao.findByEmailOrUsername(idTrim)
             if (user == null || !PasswordHasher.verify(password, user.passwordSalt, user.passwordHash)) {
-                _ui.update { it.copy(status = AuthResult.Error("Invalid email or password")) }
+                _ui.update { it.copy(status = AuthResult.Error("Invalid credentials")) }
                 return@launch
             }
 
-            session.save(user.email, user.fullName)
-            _ui.update { it.copy(status = AuthResult.Success(user), currentUser = user) }
+            accounts.addAndActivate(user.email, user.fullName)
+            _ui.update {
+                it.copy(status = AuthResult.Success(user), currentUser = user)
+            }
+        }
+    }
+
+    fun switchAccount(email: String) {
+        viewModelScope.launch {
+            val user = userDao.findByEmail(email) ?: run {
+                accounts.remove(email)
+                _ui.update {
+                    it.copy(status = AuthResult.Error("That account is no longer available"))
+                }
+                return@launch
+            }
+            accounts.switchTo(email)
+            _ui.update { it.copy(currentUser = user, status = AuthResult.Idle) }
+        }
+    }
+
+    fun removeAccount(email: String) {
+        viewModelScope.launch {
+            accounts.remove(email)
+            if (_ui.value.currentUser?.email == email) {
+                _ui.update { it.copy(currentUser = null) }
+            }
         }
     }
 
     fun logout() {
         viewModelScope.launch {
-            session.clear()
-            _ui.value = AuthUiState()   // reset everything, including currentUser
+            accounts.deactivate()
+            _ui.update { it.copy(currentUser = null, status = AuthResult.Idle) }
         }
     }
 
-    /** Call from the screen after handling the success/error state. */
     fun consumeResult() {
         _ui.update { it.copy(status = AuthResult.Idle) }
     }
 
     private fun validate(
-        name: String, email: String, password: String, confirm: String
-    ): String? = when {
-        name.isBlank() -> "Please enter your full name"
-        !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() -> "Enter a valid email"
-        password.length < 6 -> "Password must be at least 6 characters"
-        password != confirm -> "Passwords do not match"
-        else -> null
+        name: String,
+        username: String,
+        email: String,
+        password: String,
+        confirm: String,
+    ): String? {
+        val usernameRegex = Regex("^[a-z0-9._]{3,20}$")
+        return when {
+            name.isBlank() ->
+                "Please enter your full name"
+            !usernameRegex.matches(username) ->
+                "Username must be 3-20 characters (letters, numbers, . or _)"
+            !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() ->
+                "Enter a valid email address"
+            password.length < 8 ->
+                "Password must be at least 8 characters"
+            !password.any { it.isUpperCase() } ->
+                "Password must contain at least one uppercase letter"
+            !password.any { it.isDigit() } ->
+                "Password must contain at least one number"
+            !password.any { !it.isLetterOrDigit() } ->
+                "Password must contain at least one special character"
+            password != confirm ->
+                "Passwords do not match"
+            else -> null
+        }
     }
 }

@@ -21,45 +21,55 @@ data class RgbColor(
 /**
  * One reading from the Arduino.
  *
+ * Two independent colour channels:
+ *   - [sensorRgb]  — TCS34725 colour sensor (reflected light off a strip)
+ *   - [cameraRgb]  — ESP32-CAM frame (direct sample colour)
+ *
+ * The classifier uses [classifierRgb] which prefers camera over sensor
+ * because the camera sees the actual sample colour rather than reflected
+ * light off a chemistry strip.
+ *
  * Real measured channels:
- *   - [pH]      from the pH probe
- *   - [tdsPpm]  from the TDS probe
- *   - [rgb]     from the TCS34725 colour sensor (or ESP32-CAM)
- *   - [tempC]   ambient temperature, used for TDS compensation
+ *   - [pH]       from the pH probe
+ *   - [tdsPpm]   from the TDS probe
+ *   - [tempC]    ambient temperature
  *
  * Derived for UI compatibility:
  *   - [specificGravity] estimated from TDS via SG ≈ 1 + tds/30000.
- *     Real specific gravity needs a refractometer; we expose a derived
- *     value so the existing Specific Gravity card keeps rendering.
- *     Tune SG_DIVISOR if you ever validate against a refractometer —
- *     the constant defines where SG class boundaries land in TDS space.
- *   - [color] HSV computed from [rgb] for the existing colour swatch UI.
+ *   - [color] HSV computed from [classifierRgb].
+ *   - [rgb] backward-compatible alias for [classifierRgb].
  */
 data class SensorReading(
     val pH: Float? = null,
     val tdsPpm: Float? = null,
     val tempC: Float? = null,
-    val rgb: RgbColor? = null,
+    val sensorRgb: RgbColor? = null,
+    val cameraRgb: RgbColor? = null,
 ) {
-    /** Derived: specific gravity from TDS (linear approximation). */
+    /** RGB the classifier used. Camera wins when present. */
+    val classifierRgb: RgbColor?
+        get() = cameraRgb ?: sensorRgb
+
+    /** Backward-compatible alias for screens that read [rgb]. */
+    val rgb: RgbColor?
+        get() = classifierRgb
+
+    /** Derived: SG from TDS (linear approximation). */
     val specificGravity: Float?
         get() = tdsPpm?.let { 1.000f + (it.coerceAtLeast(0f) / SG_DIVISOR) }
 
-    /** Derived: HSV from RGB so existing UI keeps working. */
+    /** Derived: HSV from the classifier's chosen RGB. */
     val color: HsvColor?
-        get() = rgb?.let { rgbToHsv(it.r, it.g, it.b) }
+        get() = classifierRgb?.let { rgbToHsv(it.r, it.g, it.b) }
 
-    /** Have we received the full set of measurements? */
     val isComplete: Boolean
-        get() = pH != null && tdsPpm != null && rgb != null
+        get() = pH != null && tdsPpm != null && classifierRgb != null
+
+    /** True if both colour sources are present. */
+    val hasBothColorSources: Boolean
+        get() = sensorRgb != null && cameraRgb != null
 
     companion object {
-        /**
-         * Linear TDS → SG approximation tuned so the classification
-         * table's class boundaries (1.005 / 1.010 / 1.020 / 1.030)
-         * land at TDS readings of 150 / 300 / 600 / 900 ppm. Retune
-         * if you ever validate against a refractometer.
-         */
         const val SG_DIVISOR = 30_000f
 
         fun rgbToHsv(r: Int, g: Int, b: Int): HsvColor {

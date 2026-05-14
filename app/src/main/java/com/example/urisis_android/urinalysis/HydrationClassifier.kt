@@ -4,6 +4,25 @@ import com.example.urisis_android.bluetooth.HsvColor
 import com.example.urisis_android.bluetooth.SensorReading
 
 /**
+ * Surface flag info inline if the colour itself triggered FLAG_A.
+ * Top-level so [HistoryRepository.toUrinalysisResult] can reuse it
+ * when reconstructing a stored result for display.
+ */
+internal fun colorLabelFor(c: HsvColor, flags: List<UrineClass>): String {
+    if (UrineClass.FLAG_A in flags) {
+        return "Abnormal Colour"
+    }
+    return when {
+        c.value > 90f && c.saturation < 15f -> "Clear"
+        c.value > 85f && c.saturation < 30f -> "Pale Yellow"
+        c.value > 75f && c.saturation < 50f -> "Yellow"
+        c.value > 60f && c.saturation < 70f -> "Dark Yellow"
+        c.value > 45f                       -> "Amber"
+        else                                -> "Deep Amber / Honey"
+    }
+}
+
+/**
  * Hydration classifier.
  *
  * Public API unchanged from the previous rule-based implementation, but
@@ -41,28 +60,10 @@ object HydrationClassifier {
             pHInRange   = pH in UrinalysisResult.PH_MIN..UrinalysisResult.PH_MAX,
             sgInRange   = sg in UrinalysisResult.SG_MIN..UrinalysisResult.SG_MAX,
             tdsInRange  = tds in UrinalysisResult.TDS_MIN..UrinalysisResult.TDS_MAX,
-            colorLabel  = colorLabel(color, flags),
+            colorLabel  = colorLabelFor(color, flags),
             urineClass  = dominant,
             activeFlags = flags,
             memberships = knn.memberships,
         )
-    }
-
-    /**
-     * Surface flag info inline if the colour itself triggered FLAG_A.
-     * Callers that want pure colour name should consult the HSV directly.
-     */
-    private fun colorLabel(c: HsvColor, flags: List<UrineClass>): String {
-        if (UrineClass.FLAG_A in flags) {
-            return "Abnormal Colour"
-        }
-        return when {
-            c.value > 90f && c.saturation < 15f -> "Clear"
-            c.value > 85f && c.saturation < 30f -> "Pale Yellow"
-            c.value > 75f && c.saturation < 50f -> "Yellow"
-            c.value > 60f && c.saturation < 70f -> "Dark Yellow"
-            c.value > 45f                       -> "Amber"
-            else                                -> "Deep Amber / Honey"
-        }
     }
 }

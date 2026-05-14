@@ -9,7 +9,7 @@ import com.example.urisis_android.urinalysis.TestRecordEntity
 
 @Database(
     entities = [User::class, TestRecordEntity::class],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,8 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
                     // No formal migration: existing installs only contain
                     // user accounts (which the user can re-create) and have
                     // no test history yet. Drop the old DB rather than
-                    // ship a 1→2 migration that doesn't add value.
-                    .fallbackToDestructiveMigration()
+                    // ship a 1→4 migration that doesn't add value.
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }
             }

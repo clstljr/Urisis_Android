@@ -28,8 +28,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.urisis_android.bluetooth.HsvColor
+import com.example.urisis_android.bluetooth.RgbColor
 import com.example.urisis_android.urinalysis.HydrationStatus
 import com.example.urisis_android.urinalysis.UrinalysisResult
+import com.example.urisis_android.urinalysis.UrineClass
 import com.example.urisis_android.urinalysis.UrinalysisViewModel
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -952,10 +955,7 @@ fun AdvancedSensorDataScreen(
         ) {
             DisclaimerStrip()
 
-            AlgorithmOutputCard(
-                status = result.status,
-                confidence = result.confidence
-            )
+            FuzzyKnnResultCard(result = result)
 
             RawValueCard(
                 emoji = "⚡",
@@ -1000,13 +1000,28 @@ fun AdvancedSensorDataScreen(
                 inRange = result.tdsInRange
             )
 
-            ColorAnalysisCard(
-                swatch = swatch,
-                label = result.colorLabel,
-                hue = hsv.hue,
-                saturation = hsv.saturation,
-                value = hsv.value,
-                r = rR, g = rG, b = rB
+            // Camera RGB — direct sample view from the ESP32-CAM module.
+            // This is the colour the classifier actually consumes.
+            result.reading.cameraRgb?.let { cam ->
+                CameraRgbCard(rgb = cam, isClassifierInput = true)
+            }
+
+            // Sensor RGB — TCS34725 reflected-light reading.
+            // Shown when present, even if the classifier ignored it.
+            result.reading.sensorRgb?.let { sen ->
+                SensorRgbCard(
+                    rgb = sen,
+                    // If the classifier used the camera, the sensor is
+                    // informational only — flag that to the user.
+                    isClassifierInput = result.reading.cameraRgb == null,
+                )
+            }
+
+            // HSV — derived from whichever RGB the classifier used.
+            HsvDerivedCard(
+                hsv = hsv,
+                sourceLabel = if (result.reading.cameraRgb != null) "camera RGB"
+                else "sensor RGB",
             )
 
             MetadataCard(result = result)
@@ -1033,7 +1048,7 @@ private fun DisclaimerStrip() {
             .border(1.dp, Color(0xFFFECACA), RoundedCornerShape(12.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Top) {
             Box(
                 modifier = Modifier
                     .size(20.dp)
@@ -1041,20 +1056,25 @@ private fun DisclaimerStrip() {
                     .background(Color(0xFFDC2626)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "!",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("!", color = Color.White, fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(10.dp))
-            Text(
-                "Raw values — clinical interpretation required.",
-                fontSize = 12.sp,
-                color = Color(0xFF991B1B),
-                fontWeight = FontWeight.SemiBold
-            )
+            Column {
+                Text(
+                    "Screening tool — not a medical diagnosis.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF991B1B),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Values shown are for reference only. Consult a qualified " +
+                            "healthcare professional for clinical interpretation.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF991B1B),
+                    lineHeight = 14.sp,
+                )
+            }
         }
     }
 }
@@ -1343,6 +1363,355 @@ private fun TdsCard(tdsPpm: Float, inRange: Boolean) {
                 fontWeight = FontWeight.SemiBold
             )
         }
+    }
+}
+
+// ── Fuzzy KNN screening result ────────────────────────────────────────────
+//
+// Replaces the old AlgorithmOutputCard. Shows the full output of the
+// Enhanced Fuzzy KNN: dominant class label, confidence, active flags,
+// and a complete membership chart. The header explicitly frames the
+// output as a "screening result", and individual labels avoid any
+// language that implies medical diagnosis. Every card the user sees
+// in advanced view will be qualified by the disclaimer strip above
+// it on the same screen.
+@Composable
+private fun FuzzyKnnResultCard(result: UrinalysisResult) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🧠", fontSize = 18.sp)
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Fuzzy KNN Screening Result",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF111827)
+                )
+                Text(
+                    "Enhanced Fuzzy K-Nearest-Neighbours classifier",
+                    fontSize = 11.sp,
+                    color = Color(0xFF9CA3AF)
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // Top row: dominant class + confidence
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Indicated class", fontSize = 11.sp, color = Color(0xFF6B7280))
+                Text(
+                    result.urineClass.displayName,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E88E5)
+                )
+                Text(
+                    result.urineClass.hydrationStatus,
+                    fontSize = 13.sp,
+                    color = Color(0xFF374151),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("Confidence", fontSize = 11.sp, color = Color(0xFF6B7280))
+                Text(
+                    "%.0f%%".format(result.confidence * 100f),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF111827)
+                )
+            }
+        }
+
+        // Active flags (if any) — always non-diagnostic phrasing.
+        if (result.activeFlags.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFFFEF2F2))
+                    .border(1.dp, Color(0xFFFECACA), RoundedCornerShape(10.dp))
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("⚠", fontSize = 14.sp, color = Color(0xFFDC2626))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Indicators raised",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFB91C1C)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    result.activeFlags.forEach { flag ->
+                        val mem = result.memberships[flag] ?: 0f
+                        Text(
+                            "• ${flag.displayName} — ${flag.hydrationStatus} " +
+                                    "(${(mem * 100).toInt()}%)",
+                            fontSize = 12.sp,
+                            color = Color(0xFF991B1B),
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "These are screening signals only — a qualified " +
+                                "healthcare professional should evaluate them.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF7F1D1D),
+                        lineHeight = 14.sp,
+                    )
+                }
+            }
+        }
+
+        // Full membership chart — every class, descending.
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "All class memberships",
+            fontSize = 11.sp,
+            color = Color(0xFF6B7280),
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(6.dp))
+        UrineClass.entries
+            .sortedByDescending { result.memberships[it] ?: 0f }
+            .forEach { cls ->
+                val mem = result.memberships[cls] ?: 0f
+                MembershipBar(
+                    label = cls.displayName,
+                    membership = mem,
+                    accent = if (cls.isFlag) Color(0xFFDC2626)
+                    else if (cls == result.urineClass) Color(0xFF1E88E5)
+                    else Color(0xFF94A3B8),
+                )
+            }
+    }
+}
+
+@Composable
+private fun MembershipBar(
+    label: String,
+    membership: Float,
+    accent: Color,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 3.dp)
+    ) {
+        Text(
+            label,
+            modifier = Modifier.width(76.dp),
+            fontSize = 11.sp,
+            color = Color(0xFF374151),
+            fontWeight = FontWeight.SemiBold,
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(6.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color(0xFFE5E7EB))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(membership.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(accent)
+            )
+        }
+        Text(
+            "${(membership * 100).toInt()}%",
+            modifier = Modifier
+                .width(40.dp)
+                .padding(start = 6.dp),
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color = Color(0xFF111827),
+            textAlign = TextAlign.End,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+// ── Camera RGB ────────────────────────────────────────────────────────────
+@Composable
+private fun CameraRgbCard(rgb: RgbColor, isClassifierInput: Boolean) {
+    RgbSourceCard(
+        emoji = "📷",
+        title = "Camera RGB",
+        subtitle = "ESP32-CAM — direct sample image",
+        rgb = rgb,
+        accentBg = Color(0xFFE0F2FE),
+        accentFg = Color(0xFF0369A1),
+        isClassifierInput = isClassifierInput,
+    )
+}
+
+// ── Sensor RGB ────────────────────────────────────────────────────────────
+@Composable
+private fun SensorRgbCard(rgb: RgbColor, isClassifierInput: Boolean) {
+    RgbSourceCard(
+        emoji = "🎨",
+        title = "Sensor RGB",
+        subtitle = "TCS34725 — reflected light",
+        rgb = rgb,
+        accentBg = Color(0xFFF3E8FF),
+        accentFg = Color(0xFF7C3AED),
+        isClassifierInput = isClassifierInput,
+    )
+}
+
+// Shared chrome for both RGB sources
+@Composable
+private fun RgbSourceCard(
+    emoji: String,
+    title: String,
+    subtitle: String,
+    rgb: RgbColor,
+    accentBg: Color,
+    accentFg: Color,
+    isClassifierInput: Boolean,
+) {
+    val swatch = Color(rgb.r, rgb.g, rgb.b)
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(accentBg),
+                contentAlignment = Alignment.Center,
+            ) { Text(emoji, fontSize = 18.sp) }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+                Text(subtitle, fontSize = 11.sp, color = Color(0xFF6B7280))
+            }
+            KnnSourceTag(isUsed = isClassifierInput, accentFg = accentFg)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(swatch)
+                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+            )
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text("Hex", fontSize = 11.sp, color = Color(0xFF6B7280))
+                Text(
+                    rgb.hex ?: "#%02X%02X%02X".format(rgb.r, rgb.g, rgb.b),
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF111827),
+                )
+                rgb.lux?.let {
+                    Text(
+                        "Lux: %.0f".format(it),
+                        fontSize = 11.sp,
+                        color = Color(0xFF9CA3AF),
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+                rgb.cct?.let {
+                    Text(
+                        "CCT: ${it} K",
+                        fontSize = 11.sp,
+                        color = Color(0xFF9CA3AF),
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ChannelChip(label = "R", value = rgb.r.toString(),
+                modifier = Modifier.weight(1f))
+            ChannelChip(label = "G", value = rgb.g.toString(),
+                modifier = Modifier.weight(1f))
+            ChannelChip(label = "B", value = rgb.b.toString(),
+                modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+// Tag indicating whether a source was the actual classifier input
+@Composable
+private fun KnnSourceTag(isUsed: Boolean, accentFg: Color) {
+    val bg = if (isUsed) accentFg.copy(alpha = 0.12f) else Color(0xFFF3F4F6)
+    val fg = if (isUsed) accentFg else Color(0xFF9CA3AF)
+    val text = if (isUsed) "USED BY KNN" else "INFORMATIONAL"
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(text, fontSize = 9.sp, color = fg,
+            fontWeight = FontWeight.Bold)
+    }
+}
+
+// ── Derived HSV ───────────────────────────────────────────────────────────
+@Composable
+private fun HsvDerivedCard(hsv: HsvColor, sourceLabel: String) {
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Color(0xFFFEF3C7)),
+                contentAlignment = Alignment.Center,
+            ) { Text("🌈", fontSize = 18.sp) }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("HSV (derived)", fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+                Text(
+                    "Computed from $sourceLabel",
+                    fontSize = 11.sp,
+                    color = Color(0xFF6B7280)
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ChannelChip(label = "H", value = "%.0f°".format(hsv.hue),
+                modifier = Modifier.weight(1f))
+            ChannelChip(label = "S", value = "%.0f%%".format(hsv.saturation),
+                modifier = Modifier.weight(1f))
+            ChannelChip(label = "V", value = "%.0f%%".format(hsv.value),
+                modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Hue is split into (cos, sin) when fed to the classifier so " +
+                    "that colours near the 0°/360° boundary cluster correctly.",
+            fontSize = 11.sp,
+            color = Color(0xFF6B7280),
+            lineHeight = 14.sp,
+        )
     }
 }
 

@@ -74,6 +74,7 @@ import java.util.Locale
 fun TestHistoryScreen(
     viewModel: HistoryViewModel,
     onBack: () -> Unit = {},
+    onItemClick: (TestRecord) -> Unit = {},
 ) {
     val tests by viewModel.tests.collectAsState()
     val days by viewModel.last7Days.collectAsState()
@@ -163,7 +164,10 @@ fun TestHistoryScreen(
         } else {
             items(tests, key = { it.id }) { record ->
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
-                    HistoryListItem(record = record)
+                    HistoryListItem(
+                        record = record,
+                        onClick = { onItemClick(record) },
+                    )
                 }
             }
         }
@@ -445,12 +449,17 @@ private fun Color.toArgb(): Int = android.graphics.Color.argb(
 
 // ── History list item ─────────────────────────────────────────────────────
 @Composable
-private fun HistoryListItem(record: TestRecord) {
+private fun HistoryListItem(
+    record: TestRecord,
+    onClick: () -> Unit = {},
+) {
     val severity = record.severity()
     val theme = severity.theme()
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = theme.background),
         elevation = CardDefaults.cardElevation(0.dp),
